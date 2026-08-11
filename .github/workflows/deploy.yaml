@@ -1,0 +1,70 @@
+name: Build and Deploy Java App
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'corretto'
+          cache: maven
+
+      - name: Build with Maven
+        run: mvn clean package -DskipTests
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: target/*.jar
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-jar
+          path: dist
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Copy JAR to server
+        run: |
+          JAR_FILE=$(ls dist/*.jar)
+          scp -i ~/.ssh/id_rsa "$JAR_FILE" ec2-user@${{ secrets.EC2_HOST }}:/home/ec2-user/app/app.jar
+
+      - name: Write environment file on server
+        run: |
+          ssh -i ~/.ssh/id_rsa ec2-user@${{ secrets.EC2_HOST }} bash -c "'
+            cat > /home/ec2-user/app/.env << ENVEOF
+            DB_HOST=${{ secrets.DB_HOST }}
+            DB_NAME=${{ secrets.DB_NAME }}
+            DB_USERNAME=${{ secrets.DB_USERNAME }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            ENVEOF
+          '"
+
+      - name: Restart application
+        run: |
+          ssh -i ~/.ssh/id_rsa ec2-user@${{ secrets.EC2_HOST }} "sudo systemctl restart javaapp"
+
+      - name: Verify deployment
+        run: |
+          sleep 10
+          ssh -i ~/.ssh/id_rsa ec2-user@${{ secrets.EC2_HOST }} "curl -s http://localhost:8080 || echo 'App not responding yet — check logs'"
