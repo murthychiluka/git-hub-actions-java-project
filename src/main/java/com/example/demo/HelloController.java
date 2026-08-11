@@ -1,5 +1,13 @@
-server.port=8080
-spring.datasource.url=jdbc:mysql://${DB_HOST}:3306/${DB_NAME}
-spring.datasource.username=${DB_USERNAME}
-spring.datasource.password=${DB_PASSWORD}
-spring.jpa.hibernate.ddl-auto=update
+package com.example.demo;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class HelloController {
+
+    @GetMapping("/")
+    public String hello() {
+        return "Hello from Java app, connected to RDS!";
+    }
+}
